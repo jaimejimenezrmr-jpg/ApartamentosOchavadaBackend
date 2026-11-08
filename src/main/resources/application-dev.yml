@@ -1,0 +1,24 @@
+# Perfil de desarrollo local: SPRING_PROFILES_ACTIVE=dev
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ochavada}
+    username: ${DB_USERNAME:ochavada}
+    password: ${DB_PASSWORD:ochavada}
+
+app:
+  security:
+    jwt:
+      issuer: http://localhost:8080
+      # SOLO DESARROLLO. En producción JWT_SECRET es obligatorio y distinto.
+      secret: ${JWT_SECRET:ZGV2LW9ubHktc2VjcmV0LWFwYXJ0YW1lbnRvcy1vY2hhdmFkYS1jaGFuZ2UtbWUtMTIzNDU2Nzg=}
+    refresh-cookie:
+      # El servidor de desarrollo de Angular sirve por http://localhost:4200
+      secure: false
+  cors:
+    allowed-origins: http://localhost:4200
+  guest-portal:
+    access-url: http://localhost:4200/mi-estancia
+
+logging:
+  level:
+    com.ochavada: DEBUG

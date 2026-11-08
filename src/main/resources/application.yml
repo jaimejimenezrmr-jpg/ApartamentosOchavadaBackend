@@ -1,0 +1,216 @@
+# =====================================================================================
+# Apartamentos Ochavada · Backend
+# Configuración de producción por defecto. Todos los secretos llegan por variables de entorno.
+# =====================================================================================
+spring:
+  application:
+    name: apartamentos-ochavada-backend
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ochavada}
+    username: ${DB_USERNAME:ochavada}
+    password: ${DB_PASSWORD:}
+    hikari:
+      pool-name: ochavada-pool
+      maximum-pool-size: ${DB_POOL_SIZE:15}
+      minimum-idle: 2
+      # Hikari espera milisegundos
+      connection-timeout: 10000
+      max-lifetime: 1800000
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+        # Carga por lotes de colecciones perezosas (fotos, servicios...) para evitar consultas N+1
+        default_batch_fetch_size: 50
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    validate-on-migrate: true
+    baseline-on-migrate: false
+    clean-disabled: true
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${SMTP_STARTTLS:true}
+      mail.smtp.connectiontimeout: 10000
+      mail.smtp.timeout: 10000
+      mail.smtp.writetimeout: 10000
+  web:
+    error:
+      include-message: never
+      include-stacktrace: never
+      include-binding-errors: never
+
+server:
+  port: ${SERVER_PORT:8080}
+  # Detrás de Caddy/Cloudflare: respeta X-Forwarded-For / X-Forwarded-Proto
+  forward-headers-strategy: framework
+  shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: application/json,application/problem+json
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  health:
+    # Un SMTP caído no debe marcar la API como no disponible: el outbox reintenta los envíos.
+    mail:
+      enabled: false
+  info:
+    env:
+      enabled: false
+
+app:
+  property:
+    name: Apartamentos Ochavada
+    time-zone: Europe/Madrid
+    currency: EUR
+    max-nights-per-stay: 30
+    booking-horizon-days: 540
+    weekend-nights: FRIDAY,SATURDAY
+    check-in-time: "15:00"
+    check-out-time: "11:00"
+    address: ${PROPERTY_ADDRESS:Calle Pescaderías, 6, 14920 Aguilar de la Frontera (Córdoba)}
+    phone: ${PROPERTY_PHONE:}
+    email: ${PROPERTY_EMAIL:apartamentosochavada@gmail.com}
+  stripe:
+    secret-key: ${STRIPE_SECRET_KEY}
+    publishable-key: ${STRIPE_PUBLISHABLE_KEY}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET}
+  mail:
+    from: ${MAIL_FROM:apartamentosochavada@gmail.com}
+    from-name: Apartamentos Ochavada
+    reply-to: ${MAIL_REPLY_TO:}
+  guest-portal:
+    access-url: ${GUEST_PORTAL_URL:https://apartamentosochavada.com/mi-estancia}
+    post-checkout-grace: 2h
+  crypto:
+    # AES-256 en Base64 para cifrar tokens de TTLock/Beds24 en la base de datos: openssl rand -base64 32
+    credentials-key: ${APP_CREDENTIALS_KEY:}
+  ttlock:
+    enabled: ${TTLOCK_ENABLED:false}
+    base-url: ${TTLOCK_BASE_URL:https://euapi.ttlock.com}
+    client-id: ${TTLOCK_CLIENT_ID:}
+    client-secret: ${TTLOCK_CLIENT_SECRET:}
+    username: ${TTLOCK_USERNAME:}
+    password: ${TTLOCK_PASSWORD:}
+    connect-timeout: 5s
+    read-timeout: 20s
+  beds24:
+    enabled: ${BEDS24_ENABLED:false}
+    base-url: ${BEDS24_BASE_URL:https://api.beds24.com/v2}
+    # Alternativa al código de invitación (POST /api/v1/admin/channel/beds24/connect)
+    refresh-token: ${BEDS24_REFRESH_TOKEN:}
+    # Cabecera personalizada del webhook en Beds24: "X-Ochavada-Webhook-Token: <valor>"
+    webhook-token: ${BEDS24_WEBHOOK_TOKEN:}
+    sync-horizon-days: ${BEDS24_SYNC_HORIZON_DAYS:365}
+    ota-collect-channels: ${BEDS24_OTA_COLLECT_CHANNELS:airbnb,expedia}
+    push-bookings: ${BEDS24_PUSH_BOOKINGS:true}
+    poll-overlap: 2m
+    connect-timeout: 5s
+    read-timeout: 30s
+  access:
+    early-access: 0m
+    late-grace: 30m
+    self-check-in-requires-payment: true
+    self-check-in-requires-clean-room: true
+    self-check-in-requires-online-checkin: true
+    low-battery-threshold: 20
+  ses:
+    enabled: ${SES_ENABLED:false}
+    # Pruebas: https://hospedajes.pre-ses.mir.es/... · Producción: https://hospedajes.ses.mir.es/...
+    endpoint: ${SES_ENDPOINT:https://hospedajes.pre-ses.mir.es/hospedajes-web/ws/v1/comunicacion}
+    username: ${SES_USERNAME:}
+    password: ${SES_PASSWORD:}
+    landlord-code: ${SES_LANDLORD_CODE:}
+    establishment-code: ${SES_ESTABLISHMENT_CODE:}
+    application: Apartamentos Ochavada PMS
+    report-reservations: ${SES_REPORT_RESERVATIONS:true}
+    truststore-path: ${SES_TRUSTSTORE_PATH:}
+    truststore-password: ${SES_TRUSTSTORE_PASSWORD:}
+    batch-check-delay: 2m
+  invoicing:
+    issuer-name: ${INVOICE_ISSUER_NAME:}
+    issuer-tax-id: ${INVOICE_ISSUER_TAX_ID:}
+    issuer-address: ${INVOICE_ISSUER_ADDRESS:Calle Pescaderías, 6, 14920 Aguilar de la Frontera (Córdoba)}
+    vat-rate: 10.00
+    complete-series: A
+    simplified-series: T
+    rectifying-series: R
+    simplified-max-amount: 3000.00
+    verifactu-enabled: ${VERIFACTU_ENABLED:false}
+  checkout:
+    hold-duration: 15m
+    in-flight-hold-extension: 30m
+  rate-limit:
+    checkout:
+      requests: 10
+      window: 10m
+    guest-exchange:
+      requests: 20
+      window: 10m
+    guest-unlock:
+      requests: 30
+      window: 10m
+  jobs:
+    enabled: true
+    outbox-interval: 10s
+    hold-expiry-interval: 60s
+    lock-sync-cron: "0 0 6 * * *"
+    ses-batch-interval: 60s
+    beds24-poll-interval: 10m
+    beds24-full-sync-cron: "0 30 3 * * *"
+  security:
+    jwt:
+      issuer: ${JWT_ISSUER:https://api.apartamentosochavada.com}
+      # Clave HMAC-SHA256 en Base64 (>= 32 bytes). Generar con: openssl rand -base64 48
+      secret: ${JWT_SECRET}
+      access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:15m}
+      refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:14d}
+      guest-token-max-ttl: ${JWT_GUEST_TOKEN_MAX_TTL:12h}
+    refresh-cookie:
+      name: ochavada_rt
+      path: /api/v1/auth
+      secure: true
+      same-site: Strict
+      domain: ${REFRESH_COOKIE_DOMAIN:}
+    login:
+      max-failed-attempts: 5
+      lock-duration: 15m
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:https://apartamentosochavada.com,https://www.apartamentosochavada.com}
+  problem:
+    type-base-uri: https://apartamentosochavada.com/problems/
+  bootstrap:
+    admin:
+      email: ${APP_BOOTSTRAP_ADMIN_EMAIL:}
+      password: ${APP_BOOTSTRAP_ADMIN_PASSWORD:}
+      full-name: ${APP_BOOTSTRAP_ADMIN_NAME:Administrador}
+
+logging:
+  level:
+    root: INFO
+    com.ochavada: INFO
+    org.hibernate.SQL: WARN

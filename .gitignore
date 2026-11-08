@@ -1,0 +1,28 @@
+target/
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# Secretos locales
+.env
+*.env.local
+application-local.yml
+
+# IDEs
+.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/
+.classpath
+.factorypath
+.project
+.settings/
+.sts4-cache/
+.apt_generated/
+
+# SO / logs
+.DS_Store
+Thumbs.db
+logs/
+*.log

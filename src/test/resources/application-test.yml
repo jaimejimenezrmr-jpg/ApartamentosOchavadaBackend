@@ -1,0 +1,67 @@
+app:
+  security:
+    jwt:
+      issuer: https://test.apartamentosochavada.local
+      # 48 bytes aleatorios solo para tests
+      secret: dGVzdC1zZWNyZXQtZm9yLWludGVncmF0aW9uLXRlc3RzLW9ubHktNDgtYnl0ZXMtISE=
+    login:
+      max-failed-attempts: 3
+      lock-duration: 15m
+  cors:
+    allowed-origins: http://localhost:4200
+  stripe:
+    secret-key: sk_test_dummy_never_called_in_tests
+    publishable-key: pk_test_dummy
+    webhook-secret: whsec_test_secret_for_signature_verification
+  guest-portal:
+    access-url: https://test.apartamentosochavada.local/mi-estancia
+  invoicing:
+    issuer-name: Apartamentos Ochavada S.L.
+    issuer-tax-id: B00000000
+    issuer-address: Calle Pescaderías, 6, 14920 Aguilar de la Frontera (Córdoba)
+  crypto:
+    credentials-key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+  ttlock:
+    enabled: true
+    client-id: test-client-id
+    client-secret: test-client-secret
+    username: propietario@test.local
+    password: contraseña-ttlock
+    read-timeout: 5s
+  access:
+    # Las pruebas corren a cualquier hora: la ventana se abre la víspera de la llegada.
+    early-access: 1d
+  ses:
+    enabled: true
+    username: B00000000WS
+    password: clave-servicio-web
+    landlord-code: "0000000001"
+    establishment-code: "0000000123"
+    batch-check-delay: 0s
+  beds24:
+    enabled: true
+    refresh-token: refresh-token-de-pruebas
+    webhook-token: secreto-webhook-beds24
+    sync-horizon-days: 60
+    read-timeout: 5s
+  rate-limit:
+    checkout:
+      requests: 10000
+    guest-exchange:
+      requests: 10000
+    guest-unlock:
+      requests: 5
+  # Los procesos periódicos se invocan explícitamente desde los tests.
+  jobs:
+    enabled: false
+  bootstrap:
+    admin:
+      email: Admin@Test.local
+      password: Sup3r-Secret-Admin-Pass
+      full-name: Admin de Pruebas
+
+logging:
+  level:
+    com.ochavada: INFO
+    org.flywaydb: WARN
+    io.zonky: WARN
