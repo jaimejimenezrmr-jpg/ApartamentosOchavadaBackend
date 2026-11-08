@@ -28,8 +28,10 @@ COPY --from=build --chown=app:app /extracted/snapshot-dependencies/ ./
 COPY --from=build --chown=app:app /extracted/application/ ./
 
 USER app
+# Memoria: heap = 70 % del límite del contenedor (mem_limit); metaspace y caché de código acotados para que
+# heap + resto quepan en ese límite (con 1280m: ~900 MB de heap + ~320 MB máximo del resto).
 ENV TZ=Europe/Madrid \
-    JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/urandom"
+    JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -XX:MaxMetaspaceSize=200m -XX:ReservedCodeCacheSize=120m -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/urandom"
 EXPOSE 8080
 
 # El arranque incluye las migraciones Flyway: se da margen antes de marcar el contenedor como no sano.
