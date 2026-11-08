@@ -4,12 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.ochavada.backend.security.AppSecurityProperties;
+import com.ochavada.backend.user.StaffSessionRegistry;
 import com.ochavada.backend.user.UserRole;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
@@ -30,7 +32,14 @@ class JwtTokenServiceTest {
     private final JwtConfig config = new JwtConfig(properties);
     private final JwtTokenService service = new JwtTokenService(config.jwtEncoder(), properties, clock);
     private final JwtDecoder decoder = config.jwtDecoder(properties, clock);
-    private final RoleClaimJwtAuthenticationConverter converter = new RoleClaimJwtAuthenticationConverter();
+    /** Sin base de datos: todos los usuarios se consideran activos y con el rol del token. */
+    private final RoleClaimJwtAuthenticationConverter converter = new RoleClaimJwtAuthenticationConverter(
+            new StaffSessionRegistry(null, clock) {
+                @Override
+                public Optional<String> rejectionReason(UUID userId, String role, Instant issuedAt) {
+                    return Optional.empty();
+                }
+            });
 
     @Test
     void staffTokenContainsExpectedClaimsAndAuthorities() {
@@ -147,5 +156,13 @@ class JwtTokenServiceTest {
                         Duration.ofHours(12)),
                 new AppSecurityProperties.RefreshCookie("ochavada_rt", "/api/v1/auth", true, "Strict", null),
                 new AppSecurityProperties.Login(5, Duration.ofMinutes(15)));
+    }
+
+    @Test
+    void temporaryPasswordTokensOnlyGrantThePendingRole() {
+        String token = service.issueStaffAccessToken(UUID.randomUUID(), "nuevo@ochavada.com", "Nuevo",
+                UserRole.ADMIN, true).value();
+        assertThat(converter.convert(decoder.decode(token)).getAuthorities()).extracting(GrantedAuthority::getAuthority)
+                .containsExactly("ROLE_PASSWORD_CHANGE_PENDING");
     }
 }

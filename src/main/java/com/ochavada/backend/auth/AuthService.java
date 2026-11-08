@@ -1,5 +1,17 @@
 package com.ochavada.backend.auth;
 
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import java.util.Map;
+import java.util.List;
+import java.time.Instant;
+import java.time.Clock;
+import com.ochavada.backend.user.StaffSessionRegistry;
+import com.ochavada.backend.user.PasswordPolicy;
+import com.ochavada.backend.common.error.BadRequestException;
+import com.ochavada.backend.audit.AuditService;
+import com.ochavada.backend.audit.AuditLog.ActorType;
 import com.ochavada.backend.auth.RefreshTokenService.IssuedRefreshToken;
 import com.ochavada.backend.auth.RefreshTokenService.RotatedSession;
 import com.ochavada.backend.auth.dto.LoginRequest;
@@ -29,10 +41,21 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final JwtTokenService jwtTokenService;
     private final AppUserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final PasswordPolicy passwordPolicy;
+    private final StaffSessionRegistry sessionRegistry;
+    private final AuditService auditService;
+    private final Clock clock;
 
     public AuthService(AuthenticationManager authenticationManager, LoginAttemptService loginAttemptService,
                        RefreshTokenService refreshTokenService, JwtTokenService jwtTokenService,
-                       AppUserRepository userRepository) {
+                       AppUserRepository userRepository, PasswordEncoder passwordEncoder, PasswordPolicy passwordPolicy,
+                       StaffSessionRegistry sessionRegistry, AuditService auditService, Clock clock) {
+        this.passwordEncoder = passwordEncoder;
+        this.passwordPolicy = passwordPolicy;
+        this.sessionRegistry = sessionRegistry;
+        this.auditService = auditService;
+        this.clock = clock;
         this.authenticationManager = authenticationManager;
         this.loginAttemptService = loginAttemptService;
         this.refreshTokenService = refreshTokenService;
@@ -76,6 +99,42 @@ public class AuthService {
         }
     }
 
+    /**
+     * El usuario cambia su contraseña (obligatorio si era temporal). Se cierran todas sus sesiones, también
+     * las de otros dispositivos, y se abre una nueva en el actual.
+     */
+    @Transactional(noRollbackFor = InvalidCurrentPasswordException.class)
+    public AuthSession changePassword(UUID userId, String currentPassword, String newPassword, ClientInfo client) {
+        AppUser user = userRepository.findById(userId).orElseThrow(InvalidCredentialsException::new);
+        Instant now = clock.instant();
+        if (!user.isEnabled() || user.isLockedAt(now)) {
+            throw new InvalidCredentialsException();
+        }
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            // Cuenta como intento fallido: evita adivinar la contraseña con una sesión robada.
+            loginAttemptService.recordFailure(user.getEmail());
+            throw new InvalidCurrentPasswordException();
+        }
+        passwordPolicy.validate(newPassword, user.getEmail(), "newPassword");
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+            throw new BadRequestException("auth.same_password", "La nueva contraseña debe ser distinta de la actual",
+                    Map.of("errors", List.of(Map.of("field", "newPassword", "message", "Debe ser distinta de la actual"))));
+        }
+        user.changePassword(passwordEncoder.encode(newPassword), now);
+        userRepository.saveAndFlush(user);
+        refreshTokenService.revokeAllSessions(userId, RevocationReason.PASSWORD_CHANGED);
+        auditService.record(ActorType.STAFF, userId, "user.password_changed", "user", userId, Map.of());
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                sessionRegistry.evict(userId);
+            }
+        });
+        AppUser updated = userRepository.findById(userId).orElseThrow(InvalidCredentialsException::new);
+        IssuedRefreshToken refreshToken = refreshTokenService.issueNewSession(updated, client);
+        return new AuthSession(updated, accessTokenFor(updated), refreshToken);
+    }
+
     @Transactional(readOnly = true)
     public AppUser currentUser(UUID userId) {
         return userRepository.findById(userId)
@@ -83,7 +142,8 @@ public class AuthService {
     }
 
     private IssuedToken accessTokenFor(AppUser user) {
-        return jwtTokenService.issueStaffAccessToken(user.getId(), user.getEmail(), user.getFullName(), user.getRole());
+        return jwtTokenService.issueStaffAccessToken(user.getId(), user.getEmail(), user.getFullName(), user.getRole(),
+                user.isPasswordChangeRequired());
     }
 
     public record AuthSession(AppUser user, IssuedToken accessToken, IssuedRefreshToken refreshToken) {

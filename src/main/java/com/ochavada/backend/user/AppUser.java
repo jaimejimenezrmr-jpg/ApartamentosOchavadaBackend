@@ -65,6 +65,14 @@ public class AppUser {
     @Column(name = "password_changed_at", nullable = false)
     private Instant passwordChangedAt;
 
+    /** La contraseña actual es temporal: hay que cambiarla antes de usar el backoffice. */
+    @Column(name = "password_change_required", nullable = false)
+    private boolean passwordChangeRequired;
+
+    /** Los access tokens emitidos antes de este instante ya no son válidos. */
+    @Column(name = "sessions_revoked_at")
+    private Instant sessionsRevokedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -122,16 +130,63 @@ public class AppUser {
         lastLoginAt = now;
     }
 
+    /** Alta de un usuario por un administrador: la contraseña inicial es temporal. */
+    public static AppUser createWithTemporaryPassword(String email, String passwordHash, String fullName, String phone,
+                                                      UserRole role, Instant now) {
+        AppUser user = create(email, passwordHash, fullName, role, now);
+        user.phone = phone;
+        user.passwordChangeRequired = true;
+        return user;
+    }
+
+    /** El propio usuario cambia su contraseña: deja de ser temporal y se cierran sus otras sesiones. */
     public void changePassword(String newPasswordHash, Instant now) {
         this.passwordHash = Objects.requireNonNull(newPasswordHash, "newPasswordHash");
         this.passwordChangedAt = now;
+        this.passwordChangeRequired = false;
+        revokeSessions(now);
     }
 
-    public void disable() {
-        this.enabled = false;
+    /** Un administrador fija una contraseña temporal (olvido o sospecha de robo). */
+    public void assignTemporaryPassword(String newPasswordHash, Instant now) {
+        this.passwordHash = Objects.requireNonNull(newPasswordHash, "newPasswordHash");
+        this.passwordChangedAt = now;
+        this.passwordChangeRequired = true;
+        unlock();
+        revokeSessions(now);
+    }
+
+    public void updateProfile(String fullName, String phone) {
+        this.fullName = Objects.requireNonNull(fullName, "fullName").trim();
+        this.phone = phone == null || phone.isBlank() ? null : phone.trim();
+    }
+
+    /** Cambio de rol: los tokens emitidos con el rol anterior dejan de valer. */
+    public void changeRole(UserRole newRole, Instant now) {
+        if (this.role != Objects.requireNonNull(newRole, "newRole")) {
+            this.role = newRole;
+            revokeSessions(now);
+        }
+    }
+
+    public void disable(Instant now) {
+        if (enabled) {
+            this.enabled = false;
+            revokeSessions(now);
+        }
     }
 
     public void enable() {
         this.enabled = true;
+    }
+
+    /** Quita el bloqueo por intentos fallidos de inicio de sesión. */
+    public void unlock() {
+        this.lockedUntil = null;
+        this.failedLoginAttempts = 0;
+    }
+
+    public void revokeSessions(Instant now) {
+        this.sessionsRevokedAt = Objects.requireNonNull(now, "now");
     }
 }

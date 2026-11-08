@@ -50,6 +50,9 @@ public class SecurityConfig {
 
     private static final String[] STAFF_ROLES = {
             SecurityRoles.ADMIN, SecurityRoles.RECEPTIONIST, SecurityRoles.HOUSEKEEPING};
+    private static final String[] STAFF_OR_PENDING = {
+            SecurityRoles.ADMIN, SecurityRoles.RECEPTIONIST, SecurityRoles.HOUSEKEEPING,
+            SecurityRoles.PASSWORD_CHANGE_PENDING};
 
     @Bean
     public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http,
@@ -79,7 +82,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/admin/**").hasRole(SecurityRoles.ADMIN)
                         // Backoffice/PMS: cualquier rol de personal; el detalle se afina con @PreAuthorize
                         .requestMatchers("/api/v1/backoffice/**").hasAnyRole(STAFF_ROLES)
-                        .requestMatchers("/api/v1/auth/me").hasAnyRole(STAFF_ROLES)
+                        // Perfil y cambio de contraseña: también con contraseña temporal pendiente de cambiar
+                        .requestMatchers("/api/v1/auth/me", "/api/v1/auth/password").hasAnyRole(STAFF_OR_PENDING)
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(resourceServer -> resourceServer
                         .bearerTokenResolver(bearerTokenResolver)

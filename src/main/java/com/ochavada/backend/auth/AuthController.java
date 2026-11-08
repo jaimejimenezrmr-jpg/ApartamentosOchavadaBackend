@@ -1,5 +1,7 @@
 package com.ochavada.backend.auth;
 
+import org.springframework.web.bind.annotation.PutMapping;
+import com.ochavada.backend.user.dto.UserDtos.ChangePasswordRequest;
 import com.ochavada.backend.auth.AuthService.AuthSession;
 import com.ochavada.backend.auth.dto.CurrentUserResponse;
 import com.ochavada.backend.auth.dto.LoginRequest;
@@ -60,6 +62,16 @@ public class AuthController {
         return ResponseEntity.noContent()
                 .header(HttpHeaders.SET_COOKIE, cookieFactory.clear().toString())
                 .build();
+    }
+
+    /** Cambio de la propia contraseña; devuelve una sesión nueva (las anteriores quedan cerradas). */
+    @PutMapping("/password")
+    public ResponseEntity<TokenResponse> changePassword(@AuthenticationPrincipal Jwt jwt,
+                                                        @Valid @RequestBody ChangePasswordRequest request,
+                                                        HttpServletRequest httpRequest) {
+        AuthSession session = authService.changePassword(UUID.fromString(jwt.getSubject()), request.currentPassword(),
+                request.newPassword(), ClientInfo.from(httpRequest));
+        return tokenResponse(session);
     }
 
     @GetMapping("/me")

@@ -5,6 +5,8 @@ package com.ochavada.backend.security.jwt;
  */
 public final class JwtClaimNames {
 
+    /** {@code true} si la contraseña es temporal: el token solo permite cambiarla. */
+    public static final String PASSWORD_CHANGE_REQUIRED = "pwd_change";
     public static final String TOKEN_TYPE = "token_type";
     public static final String ROLES = "roles";
     public static final String EMAIL = "email";

@@ -35,6 +35,14 @@ public class JwtTokenService {
      * Access token de corta duración para un usuario del backoffice.
      */
     public IssuedToken issueStaffAccessToken(UUID userId, String email, String fullName, UserRole role) {
+        return issueStaffAccessToken(userId, email, fullName, role, false);
+    }
+
+    /**
+     * @param passwordChangeRequired si la contraseña es temporal: el token solo permitirá cambiarla
+     */
+    public IssuedToken issueStaffAccessToken(UUID userId, String email, String fullName, UserRole role,
+                                             boolean passwordChangeRequired) {
         Objects.requireNonNull(userId, "userId");
         Objects.requireNonNull(role, "role");
         Instant now = now();
@@ -51,6 +59,7 @@ public class JwtTokenService {
                 .claim(JwtClaimNames.ROLES, List.of(role.name()))
                 .claim(JwtClaimNames.EMAIL, email)
                 .claim(JwtClaimNames.NAME, fullName)
+                .claim(JwtClaimNames.PASSWORD_CHANGE_REQUIRED, passwordChangeRequired)
                 .build();
         return encode(claims, now, expiresAt);
     }

@@ -92,6 +92,22 @@ Los tests de integración arrancan un PostgreSQL 16 real embebido (zonky): no ha
 | `POST /api/v1/auth/refresh` | Rota el refresh token de la cookie y devuelve un nuevo access token |
 | `POST /api/v1/auth/logout` | Revoca la sesión y elimina la cookie |
 | `GET /api/v1/auth/me` | Usuario autenticado (`Authorization: Bearer …`) |
+| `PUT /api/v1/auth/password` | Cambio de la propia contraseña; cierra todas las sesiones y abre una nueva |
+
+### Usuarios del backoffice (ADMIN)
+
+| Endpoint | Descripción |
+|---|---|
+| `GET /api/v1/admin/users` | Listado con estado (activo, bloqueado, pendiente de primer acceso) |
+| `POST /api/v1/admin/users` | Alta: genera una contraseña temporal que se devuelve una sola vez |
+| `PUT /api/v1/admin/users/{id}` | Nombre, teléfono, rol y activo/desactivado (con `version`) |
+| `POST /api/v1/admin/users/{id}/reset-password` | Nueva contraseña temporal |
+| `POST /api/v1/admin/users/{id}/unlock` · `/revoke-sessions` | Quitar el bloqueo por intentos fallidos · cerrar todas sus sesiones |
+
+Con contraseña temporal, el token solo permite `GET /auth/me` y `PUT /auth/password`. Desactivar, cambiar el rol o
+resetear la contraseña invalida al momento los access tokens vigentes (cada token del personal se contrasta con la
+base de datos, con una caché de 30 s por instancia). Contraseñas: 12–64 caracteres, sin el email; los usuarios no se
+borran (se desactivan) y siempre queda un administrador activo.
 
 Las rutas se protegen por prefijo: `/api/v1/public/**` y `/api/v1/webhooks/**` son públicas,
 `/api/v1/backoffice/**` exige un rol de personal, `/api/v1/admin/**` exige ADMIN y
