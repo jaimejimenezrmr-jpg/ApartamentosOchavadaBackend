@@ -41,9 +41,14 @@ public class ReservationEmailComposer {
         String guests = r.getAdults() + (es ? " adultos" : " adults")
                 + (r.getChildren() > 0 ? ", " + r.getChildren() + (es ? " niños" : " children") : "");
 
-        String subject = es
+        String subject = (property.testMode() ? (es ? "[PRUEBA] " : "[TEST] ") : "") + (es
                 ? "Reserva confirmada " + r.getCode() + " · " + property.name()
-                : "Booking confirmed " + r.getCode() + " · " + property.name();
+                : "Booking confirmed " + r.getCode() + " · " + property.name());
+        String testNotice = es
+                ? "RESERVA DE PRUEBA. La web está en pruebas y los apartamentos aún no están disponibles: esta "
+                + "reserva no es real, no garantiza alojamiento y no se ha cobrado nada."
+                : "TEST BOOKING. The website is being tested and the apartments are not yet available: this booking "
+                + "is not real, does not guarantee accommodation and nothing has been charged.";
 
         String[][] rows = {
                 {es ? "Localizador" : "Booking reference", r.getCode()},
@@ -68,7 +73,11 @@ public class ReservationEmailComposer {
         String button = es ? "Acceder a mi estancia" : "Open my stay";
         String contact = contactLine(es);
 
-        StringBuilder text = new StringBuilder(intro).append("\n\n");
+        StringBuilder text = new StringBuilder();
+        if (property.testMode()) {
+            text.append(testNotice).append("\n\n");
+        }
+        text.append(intro).append("\n\n");
         for (String[] row : rows) {
             text.append(row[0]).append(": ").append(row[1]).append('\n');
         }
@@ -78,7 +87,12 @@ public class ReservationEmailComposer {
         StringBuilder html = new StringBuilder()
                 .append("<!doctype html><html lang=\"").append(es ? "es" : "en").append("\"><body style=\"")
                 .append("font-family:Arial,Helvetica,sans-serif;color:#1f2933;max-width:600px;margin:0 auto\">")
-                .append("<h1 style=\"font-size:20px\">").append(esc(property.name())).append("</h1>")
+                .append("<h1 style=\"font-size:20px\">").append(esc(property.name())).append("</h1>");
+        if (property.testMode()) {
+            html.append("<p style=\"padding:12px 14px;background:#fff4e5;border:2px solid #b45309;color:#7c2d12;")
+                    .append("border-radius:6px;font-weight:bold\">").append(esc(testNotice)).append("</p>");
+        }
+        html
                 .append("<p>").append(esc(intro)).append("</p>")
                 .append("<table style=\"border-collapse:collapse;width:100%\">");
         for (String[] row : rows) {

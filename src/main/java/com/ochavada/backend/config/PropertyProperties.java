@@ -28,6 +28,7 @@ import org.springframework.validation.annotation.Validated;
  * @param address             dirección postal (emails, ficha de Google)
  * @param phone               teléfono de contacto para huéspedes
  * @param email               email de contacto para huéspedes
+ * @param testMode            web en pruebas ({@code SITE_TEST_MODE}): los emails avisan de que la reserva no es real
  */
 @Validated
 @ConfigurationProperties("app.property")
@@ -42,5 +43,6 @@ public record PropertyProperties(
         @NotNull @DefaultValue("11:00") LocalTime checkOutTime,
         String address,
         String phone,
-        String email) {
+        String email,
+        @DefaultValue("false") boolean testMode) {
 }

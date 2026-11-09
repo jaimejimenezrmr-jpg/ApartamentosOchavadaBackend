@@ -100,6 +100,8 @@ app:
     address: ${PROPERTY_ADDRESS:Calle Pescaderías, 6, 14920 Aguilar de la Frontera (Córdoba)}
     phone: ${PROPERTY_PHONE:}
     email: ${PROPERTY_EMAIL:apartamentosochavada@gmail.com}
+    # Web en pruebas: los emails de reserva avisan de que no es real. Poner a false en el lanzamiento.
+    test-mode: ${SITE_TEST_MODE:false}
   stripe:
     secret-key: ${STRIPE_SECRET_KEY}
     publishable-key: ${STRIPE_PUBLISHABLE_KEY}
