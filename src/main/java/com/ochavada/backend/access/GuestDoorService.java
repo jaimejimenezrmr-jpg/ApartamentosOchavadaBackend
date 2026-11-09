@@ -64,7 +64,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class GuestDoorService {
 
-    private static final Set<HousekeepingStatus> READY = EnumSet.of(HousekeepingStatus.CLEAN, HousekeepingStatus.INSPECTED);
+    /** Solo una unidad inspeccionada (LISTA) recibe huéspedes: «limpio» aún está pendiente de inspección. */
+    private static final Set<HousekeepingStatus> READY = EnumSet.of(HousekeepingStatus.INSPECTED);
 
     private final GuestAccessService guestAccessService;
     private final ReservationRepository reservationRepository;

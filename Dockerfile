@@ -19,7 +19,8 @@ FROM eclipse-temurin:21-jre-alpine AS runtime
 
 RUN apk add --no-cache tzdata \
  && addgroup -S -g 10001 app \
- && adduser -S -u 10001 -G app -h /app app
+ && adduser -S -u 10001 -G app -h /app app \
+ && mkdir -p /app/data/media && chown -R app:app /app/data
 WORKDIR /app
 
 COPY --from=build --chown=app:app /extracted/dependencies/ ./

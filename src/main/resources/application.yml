@@ -54,6 +54,11 @@ spring:
       include-message: never
       include-stacktrace: never
       include-binding-errors: never
+  servlet:
+    multipart:
+      # Fotos del centro de operaciones (el front las reduce antes de subirlas); ver app.media.max-bytes
+      max-file-size: 10MB
+      max-request-size: 11MB
 
 server:
   port: ${SERVER_PORT:8080}
@@ -161,6 +166,10 @@ app:
     rectifying-series: R
     simplified-max-amount: 3000.00
     verifactu-enabled: ${VERIFACTU_ENABLED:false}
+  media:
+    # Volumen persistente en Docker (ver docker-compose.yml)
+    storage-path: ${MEDIA_STORAGE_PATH:/app/data/media}
+    max-bytes: 10000000
   checkout:
     hold-duration: 15m
     in-flight-hold-extension: 30m

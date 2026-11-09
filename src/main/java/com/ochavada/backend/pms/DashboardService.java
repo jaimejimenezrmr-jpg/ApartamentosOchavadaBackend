@@ -1,10 +1,16 @@
 package com.ochavada.backend.pms;
 
+import com.ochavada.backend.access.AccessProperties;
 import com.ochavada.backend.catalog.HousekeepingStatus;
 import com.ochavada.backend.config.PropertyCalendar;
 import com.ochavada.backend.config.PropertyProperties;
 import com.ochavada.backend.housekeeping.HousekeepingTaskRepository;
 import com.ochavada.backend.housekeeping.TaskStatus;
+import com.ochavada.backend.incident.IncidentPriority;
+import com.ochavada.backend.incident.IncidentRepository;
+import com.ochavada.backend.incident.IncidentStatus;
+import com.ochavada.backend.lostitem.LostItemRepository;
+import com.ochavada.backend.lostitem.LostItemStatus;
 import com.ochavada.backend.pms.dto.DashboardResponse;
 import com.ochavada.backend.reservation.ReservationRepository;
 import com.ochavada.backend.reservation.ReservationStatus;
@@ -12,7 +18,9 @@ import com.ochavada.backend.reservation.backoffice.dto.ReservationSummary;
 import com.ochavada.backend.ses.SesReportQueryService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.sql.Timestamp;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -36,11 +44,20 @@ public class DashboardService {
     private final PropertyCalendar calendar;
     private final PropertyProperties property;
     private final SesReportQueryService sesReports;
+    private final IncidentRepository incidentRepository;
+    private final LostItemRepository lostItemRepository;
+    private final AccessProperties accessProperties;
+    private final Clock clock;
 
     public DashboardService(ReservationRepository reservationRepository, HousekeepingTaskRepository taskRepository,
                             JdbcClient jdbc, PropertyCalendar calendar, PropertyProperties property,
-                            SesReportQueryService sesReports) {
+                            SesReportQueryService sesReports, IncidentRepository incidentRepository,
+                            LostItemRepository lostItemRepository, AccessProperties accessProperties, Clock clock) {
         this.sesReports = sesReports;
+        this.incidentRepository = incidentRepository;
+        this.lostItemRepository = lostItemRepository;
+        this.accessProperties = accessProperties;
+        this.clock = clock;
         this.reservationRepository = reservationRepository;
         this.taskRepository = taskRepository;
         this.jdbc = jdbc;
@@ -103,7 +120,36 @@ public class DashboardService {
                 taskRepository.countByStatusIn(List.of(TaskStatus.PENDING, TaskStatus.IN_PROGRESS)),
                 sesReports.needingAction(),
                 sesReports.overdue(),
-                property.currency());
+                property.currency(),
+                operations(date));
+    }
+
+    private DashboardResponse.Operations operations(LocalDate date) {
+        long arrivalsNotReady = jdbc.sql("""
+                        SELECT count(*) FROM reservation r JOIN room u ON u.id = r.room_id
+                         WHERE r.check_in_date = :d AND r.status = 'CONFIRMED'
+                           AND (u.housekeeping_status <> 'INSPECTED' OR u.status <> 'ACTIVE')
+                        """)
+                .param("d", date).query(Long.class).single();
+        long awaitingInspection = jdbc.sql("SELECT count(*) FROM housekeeping_task WHERE status = 'DONE'")
+                .query(Long.class).single();
+        long overdue = jdbc.sql("""
+                        SELECT count(*) FROM housekeeping_task
+                         WHERE status IN ('PENDING', 'IN_PROGRESS') AND due_by IS NOT NULL AND due_by < :now
+                        """)
+                .param("now", Timestamp.from(clock.instant())).query(Long.class).single();
+        long lowBattery = jdbc.sql("""
+                        SELECT count(*) FROM lock_device
+                         WHERE active AND battery_level IS NOT NULL AND battery_level <= :threshold
+                        """)
+                .param("threshold", accessProperties.lowBatteryThreshold()).query(Long.class).single();
+        return new DashboardResponse.Operations(
+                arrivalsNotReady, awaitingInspection, overdue,
+                incidentRepository.countByStatusInAndPriority(IncidentStatus.ACTIVE, IncidentPriority.P1),
+                incidentRepository.countByStatusInAndPriority(IncidentStatus.ACTIVE, IncidentPriority.P2),
+                incidentRepository.countByStatusIn(IncidentStatus.ACTIVE),
+                lostItemRepository.countByStatusIn(LostItemStatus.OPEN),
+                lowBattery);
     }
 
     private static BigDecimal percent(int part, int total) {

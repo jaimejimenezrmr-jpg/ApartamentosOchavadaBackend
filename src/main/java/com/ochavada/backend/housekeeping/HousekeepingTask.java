@@ -3,6 +3,9 @@ package com.ochavada.backend.housekeeping;
 import com.ochavada.backend.catalog.Room;
 import com.ochavada.backend.common.domain.VersionedEntity;
 import com.ochavada.backend.common.error.ConflictException;
+import com.ochavada.backend.housekeeping.checklist.ChecklistItem;
+import com.ochavada.backend.housekeeping.checklist.ChecklistTemplate;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -10,9 +13,16 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -22,6 +32,10 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * Tarea de gobernanza. Ciclo: PENDING → IN_PROGRESS → DONE → VERIFIED (o CANCELLED desde un estado abierto).
+ * <p>
+ * Una limpieza con lista de comprobación copia los puntos de la plantilla al empezar; solo se puede terminar
+ * con todos marcados (y con foto los que la exigen). La inspección puede rechazarla: vuelve a PENDING con el
+ * motivo y hay que repetirla.
  */
 @Entity
 @Table(name = "housekeeping_task")
@@ -76,6 +90,29 @@ public class HousekeepingTask extends VersionedEntity {
     @Column(name = "created_by_user_id")
     private UUID createdByUserId;
 
+    @Column(name = "checklist_template_id")
+    private UUID checklistTemplateId;
+
+    @Column(name = "completed_by_user_id")
+    private UUID completedByUserId;
+
+    @JdbcTypeCode(SqlTypes.SMALLINT)
+    @Column(name = "rejection_count", nullable = false)
+    private int rejectionCount;
+
+    @Column(name = "rejection_reason", length = 500)
+    private String rejectionReason;
+
+    @Column(name = "rejected_at")
+    private Instant rejectedAt;
+
+    @Column(name = "rejected_by_user_id")
+    private UUID rejectedByUserId;
+
+    @OneToMany(mappedBy = "task", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("position")
+    private List<HousekeepingTaskCheck> checks = new ArrayList<>();
+
     public HousekeepingTask(Room room, UUID reservationId, TaskType taskType, int priority, LocalDate scheduledDate,
                             Instant dueBy, String notes, UUID createdByUserId) {
         this.room = room;
@@ -94,24 +131,62 @@ public class HousekeepingTask extends VersionedEntity {
         this.assignedUserId = userId;
     }
 
-    public void start(UUID userId, Instant now) {
+    public List<HousekeepingTaskCheck> getChecks() {
+        return Collections.unmodifiableList(checks);
+    }
+
+    public Optional<HousekeepingTaskCheck> findCheck(UUID checkId) {
+        return checks.stream().filter(c -> c.getId().equals(checkId)).findFirst();
+    }
+
+    /**
+     * @param template lista aplicable a la unidad; se copia solo la primera vez (tras un rechazo se conserva
+     *                 la misma lista, con sus fotos, y se vuelve a marcar)
+     */
+    public void start(UUID userId, Instant now, ChecklistTemplate template) {
         if (status != TaskStatus.PENDING) {
             throw invalid("iniciar");
         }
         if (assignedUserId == null) {
             assignedUserId = userId;
         }
+        if (template != null && checks.isEmpty() && taskType.cleansRoom()) {
+            checklistTemplateId = template.getId();
+            for (ChecklistItem item : template.getItems()) {
+                checks.add(new HousekeepingTaskCheck(this, item.getPosition(), item.getSection(), item.getLabel(),
+                        item.isPhotoRequired()));
+            }
+        }
         this.status = TaskStatus.IN_PROGRESS;
         this.startedAt = now;
     }
 
-    public void complete(String completionNotes, Instant now) {
+    public void markCheck(HousekeepingTaskCheck check, boolean checked, String comment, UUID userId, Instant now) {
+        if (status != TaskStatus.IN_PROGRESS) {
+            throw new ConflictException("housekeeping.task_not_started", "Empiece la tarea antes de marcar la lista");
+        }
+        check.mark(checked, comment, userId, now);
+    }
+
+    /**
+     * @param missing puntos sin completar (sin marcar o sin la foto obligatoria); con alguno no se puede terminar
+     */
+    public void complete(UUID userId, String completionNotes, List<String> missing, Instant now) {
         requireOpen();
+        if (!missing.isEmpty()) {
+            throw new ConflictException("housekeeping.checklist_incomplete",
+                    "Faltan puntos de la lista de comprobación: " + String.join(", ", missing),
+                    Map.of("missing", missing));
+        }
         if (startedAt == null) {
             startedAt = now;
         }
+        if (assignedUserId == null) {
+            assignedUserId = userId;
+        }
         this.status = TaskStatus.DONE;
         this.completedAt = now;
+        this.completedByUserId = userId;
         if (completionNotes != null && !completionNotes.isBlank()) {
             this.notes = notes == null ? completionNotes.trim() : notes + "\n" + completionNotes.trim();
         }
@@ -119,11 +194,26 @@ public class HousekeepingTask extends VersionedEntity {
 
     public void verify(UUID userId, Instant now) {
         if (status != TaskStatus.DONE) {
-            throw invalid("verificar");
+            throw invalid("inspeccionar");
         }
         this.status = TaskStatus.VERIFIED;
         this.verifiedAt = now;
         this.verifiedByUserId = userId;
+    }
+
+    /** La inspección no la da por buena: vuelve a pendiente con el motivo y los puntos sin marcar. */
+    public void reject(UUID userId, String reason, Instant now) {
+        if (status != TaskStatus.DONE) {
+            throw invalid("rechazar");
+        }
+        this.status = TaskStatus.PENDING;
+        this.rejectionCount++;
+        this.rejectionReason = reason;
+        this.rejectedAt = now;
+        this.rejectedByUserId = userId;
+        this.completedAt = null;
+        this.completedByUserId = null;
+        checks.forEach(HousekeepingTaskCheck::reset);
     }
 
     public void cancel() {

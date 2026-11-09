@@ -165,6 +165,11 @@ class PmsIntegrationTest extends AbstractApiTest {
         perform(post(base + "/check-in"), UserRole.RECEPTIONIST)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("reservation.room_not_ready"));
+        // Limpia pero sin inspeccionar tampoco basta: solo una unidad LISTA recibe huéspedes.
+        jdbc.update("update room set housekeeping_status = 'CLEAN' where id = ?", roomA);
+        perform(post(base + "/check-in"), UserRole.RECEPTIONIST)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("reservation.room_not_ready"));
         jdbc.update("update room set housekeeping_status = 'INSPECTED' where id = ?", roomA);
         // Sin los datos de los viajeros (parte SES) recepción no puede hacer el check-in.
         perform(post(base + "/check-in"), UserRole.RECEPTIONIST)
@@ -202,7 +207,8 @@ class PmsIntegrationTest extends AbstractApiTest {
         assertThat(taskIds).hasSize(1);
         String task = "/api/v1/backoffice/housekeeping/tasks/" + taskIds.getFirst();
 
-        perform(post(task + "/verify"), UserRole.HOUSEKEEPING).andExpect(status().isForbidden());
+        // Aún no hay nada que inspeccionar.
+        perform(post(task + "/verify"), UserRole.HOUSEKEEPING).andExpect(status().isConflict());
         perform(post(task + "/start"), UserRole.HOUSEKEEPING)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("IN_PROGRESS"))

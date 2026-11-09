@@ -18,6 +18,8 @@ app:
     allowed-origins: http://localhost:4200
   guest-portal:
     access-url: http://localhost:4200/mi-estancia
+  media:
+    storage-path: ${MEDIA_STORAGE_PATH:./data/media}
 
 logging:
   level:

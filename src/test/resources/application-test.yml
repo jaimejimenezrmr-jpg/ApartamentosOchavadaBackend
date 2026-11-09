@@ -1,4 +1,6 @@
 app:
+  media:
+    storage-path: ${java.io.tmpdir}/ochavada-test-media
   security:
     jwt:
       issuer: https://test.apartamentosochavada.local

@@ -26,4 +26,28 @@ public final class CurrentUser {
         }
         return Optional.empty();
     }
+
+    /**
+     * Si el usuario tiene alguno de los roles indicados <em>tal como figuran en su token</em> (sin aplicar la
+     * jerarquía de roles). Para "al menos recepción" pase {@code RECEPTIONIST} y {@code ADMIN}.
+     */
+    public static boolean hasAnyRole(String... roles) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            return false;
+        }
+        for (var authority : authentication.getAuthorities()) {
+            for (String role : roles) {
+                if (authority.getAuthority().equals(SecurityRoles.ROLE_PREFIX + role)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Recepción o administración (quien puede inspeccionar, gestionar incidencias, etc.). */
+    public static boolean isReceptionOrAbove() {
+        return hasAnyRole(SecurityRoles.RECEPTIONIST, SecurityRoles.ADMIN);
+    }
 }

@@ -36,7 +36,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class FrontDeskService {
 
-    private static final Set<HousekeepingStatus> READY = EnumSet.of(HousekeepingStatus.CLEAN, HousekeepingStatus.INSPECTED);
+    /** Solo una unidad inspeccionada (LISTA) recibe huéspedes: «limpio» aún está pendiente de inspección. */
+    private static final Set<HousekeepingStatus> READY = EnumSet.of(HousekeepingStatus.INSPECTED);
 
     private final ReservationRepository repository;
     private final ReservationQueryService queryService;
@@ -62,8 +63,8 @@ public class FrontDeskService {
     }
 
     /**
-     * @param force permite el check-in aunque la unidad no figure como limpia (p. ej. repaso hecho sin
-     *              registrar la tarea)
+     * @param force permite el check-in aunque la unidad no figure como LISTA (p. ej. inspección hecha sin
+     *              registrarla)
      */
     @Transactional
     public ReservationDetail checkIn(UUID id, boolean force) {
@@ -84,8 +85,8 @@ public class FrontDeskService {
             }
             if (!force && !READY.contains(room.getHousekeepingStatus())) {
                 throw new ConflictException("reservation.room_not_ready",
-                        "La unidad " + room.getNumber() + " figura como " + room.getHousekeepingStatus()
-                                + ". Confirme con limpieza o fuerce el check-in",
+                        "La unidad " + room.getNumber() + " no está LISTA (" + readinessLabel(room.getHousekeepingStatus())
+                                + "). Inspecciónela antes de la entrada o fuerce el check-in",
                         Map.of("housekeepingStatus", room.getHousekeepingStatus().name()));
             }
         }
@@ -133,5 +134,15 @@ public class FrontDeskService {
 
     private Reservation lock(UUID id) {
         return repository.findForUpdate(id).orElseThrow(() -> new ResourceNotFoundException("reserva", id));
+    }
+
+    private static String readinessLabel(HousekeepingStatus status) {
+        return switch (status) {
+            case DIRTY -> "pendiente de limpieza";
+            case IN_PROGRESS -> "en limpieza";
+            case CLEAN -> "limpia, pendiente de inspección";
+            case INSPECTED -> "lista";
+            case OUT_OF_SERVICE -> "fuera de servicio";
+        };
     }
 }

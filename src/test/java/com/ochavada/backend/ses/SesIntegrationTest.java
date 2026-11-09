@@ -49,7 +49,9 @@ class SesIntegrationTest extends AbstractApiTest {
                 values (?, ?, ?, 4, 4, 2, 80.00) returning id
                 """, UUID.class, "SES-" + s, "ses-" + s.toLowerCase(), "SES " + s);
         for (int i = 0; i < 4; i++) {
-            jdbc.update("insert into room (room_type_id, number) values (?, ?)", roomTypeId, i + s.substring(0, 6));
+            // Unidades ya inspeccionadas (LISTAS): este test trata del parte de viajeros, no de la limpieza.
+            jdbc.update("insert into room (room_type_id, number, housekeeping_status) values (?, ?, 'INSPECTED')", roomTypeId,
+                    i + s.substring(0, 6));
         }
         planId = jdbc.queryForObject("""
                 insert into rate_plan (room_type_id, code, name, refundable, free_cancellation_days,

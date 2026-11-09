@@ -17,6 +17,7 @@ import java.util.Map;
  * @param invoicedMonthToDate total facturado en el mes (facturas y rectificativas)
  * @param sesReportsNeedingAction comunicaciones SES en borrador, rechazadas o con error
  * @param sesReportsOverdue    comunicaciones SES abiertas fuera del plazo legal de 24 h
+ * @param operations           excepciones operativas del día (limpieza, incidencias, cerraduras…)
  */
 public record DashboardResponse(
         LocalDate date,
@@ -36,5 +37,25 @@ public record DashboardResponse(
         long openHousekeepingTasks,
         long sesReportsNeedingAction,
         long sesReportsOverdue,
-        String currency) {
+        String currency,
+        Operations operations) {
+
+    /**
+     * Lo que requiere atención hoy: el panel muestra excepciones, no hay que buscarlas.
+     *
+     * @param arrivalsNotReady       llegadas del día cuya unidad no está LISTA (inspeccionada)
+     * @param tasksAwaitingInspection limpiezas terminadas pendientes de inspección
+     * @param overdueTasks           tareas abiertas que han pasado su hora límite
+     * @param locksLowBattery        cerraduras activas con batería baja
+     */
+    public record Operations(
+            long arrivalsNotReady,
+            long tasksAwaitingInspection,
+            long overdueTasks,
+            long openIncidentsP1,
+            long openIncidentsP2,
+            long openIncidents,
+            long openLostItems,
+            long locksLowBattery) {
+    }
 }

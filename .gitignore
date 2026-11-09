@@ -26,3 +26,6 @@ application-local.yml
 Thumbs.db
 logs/
 *.log
+
+# Fotos subidas en desarrollo (app.media.storage-path del perfil dev)
+/data/
