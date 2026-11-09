@@ -11,6 +11,8 @@ import com.ochavada.backend.notification.ReservationEmailHandler;
 import com.ochavada.backend.payment.Payment;
 import com.ochavada.backend.payment.PaymentRepository;
 import com.ochavada.backend.payment.gateway.PaymentGateway;
+import com.ochavada.backend.payment.gateway.PaymentGateway.IntentSnapshot;
+import com.ochavada.backend.payment.gateway.PaymentGateway.IntentStatus;
 import com.ochavada.backend.reservation.Reservation;
 import com.ochavada.backend.reservation.ReservationLifecycleEvent;
 import com.ochavada.backend.reservation.ReservationRepository;
@@ -83,7 +85,34 @@ public class StripeWebhookService {
     }
 
     public void handle(String payload, String signatureHeader) {
-        PaymentWebhookEvent event = parser.parse(payload, signatureHeader);
+        handleVerified(parser.parse(payload, signatureHeader));
+    }
+
+    /**
+     * Plan B por si el webhook no llega (endpoint mal configurado, Stripe con retraso…): consulta el
+     * PaymentIntent en Stripe y, si ya está cobrado, aplica exactamente el mismo efecto que
+     * {@code payment_intent.succeeded}. Es idempotente: si el webhook llega después, no hace nada más.
+     *
+     * @return {@code true} si el pago está cobrado y se ha aplicado
+     */
+    public boolean reconcileIfSucceeded(String paymentIntentId) {
+        IntentSnapshot snapshot = paymentGateway.retrieveIntent(paymentIntentId);
+        if (snapshot.status() != IntentStatus.SUCCEEDED) {
+            return false;
+        }
+        applySucceeded(snapshot);
+        return true;
+    }
+
+    /** Aplica un PaymentIntent que Stripe ya ha confirmado como cobrado. */
+    public void applySucceeded(IntentSnapshot snapshot) {
+        log.warn("Pago {} confirmado consultando a Stripe (no había llegado el webhook)", snapshot.paymentIntentId());
+        handleVerified(new PaymentWebhookEvent("reconcile_" + snapshot.paymentIntentId(), SUCCEEDED,
+                snapshot.paymentIntentId(), null, snapshot.chargeId(), null, null,
+                "{\"source\":\"reconcile\"}"));
+    }
+
+    private void handleVerified(PaymentWebhookEvent event) {
         try {
             tx.executeWithoutResult(status -> process(event));
         } catch (DataIntegrityViolationException ex) {

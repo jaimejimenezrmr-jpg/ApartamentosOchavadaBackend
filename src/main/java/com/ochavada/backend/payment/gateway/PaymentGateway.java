@@ -37,7 +37,8 @@ public interface PaymentGateway {
     record CreatedIntent(String paymentIntentId, String clientSecret) {
     }
 
-    record IntentSnapshot(String paymentIntentId, IntentStatus status, String clientSecret) {
+    /** @param chargeId último cargo del PaymentIntent (solo si está cobrado) */
+    record IntentSnapshot(String paymentIntentId, IntentStatus status, String clientSecret, String chargeId) {
     }
 
     enum IntentStatus {

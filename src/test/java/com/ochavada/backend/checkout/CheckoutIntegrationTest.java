@@ -239,6 +239,47 @@ class CheckoutIntegrationTest extends AbstractApiTest {
     }
 
     @Test
+    void paidIntentIsConfirmedWhenStatusIsPolledEvenWithoutWebhook() throws Exception {
+        ResultActions started = startCheckout(flexPlanId, checkIn, checkOut, email, null).andExpect(status().isCreated());
+        String code = read(started, "$.reservationCode");
+        String token = read(started, "$.checkoutToken");
+        String intentId = gateway.intentBySecret(read(started, "$.payment.clientSecret")).id();
+
+        // Aún sin cobrar: sigue pendiente.
+        checkoutStatus(code, token).andExpect(jsonPath("$.status").value("PENDING_PAYMENT"));
+
+        // Stripe cobra pero el webhook nunca llega: la página de estado lo descubre al consultar.
+        gateway.setStatus(intentId, IntentStatus.SUCCEEDED);
+        checkoutStatus(code, token).andExpect(jsonPath("$.status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.paymentStatus").value("SUCCEEDED"));
+        assertThat(jdbc.queryForObject("select count(*) from outbox_event where destination = 'EMAIL' and aggregate_id = "
+                + "(select id::text from reservation where code = ?)", Integer.class, code)).isEqualTo(1);
+
+        // Si el webhook llega después, no se duplica nada.
+        webhook(StripeWebhookSigner.paymentIntentEvent("payment_intent.succeeded", intentId, 10800, "succeeded", null))
+                .andExpect(status().isOk());
+        assertThat(jdbc.queryForObject("select r.paid_amount = p.amount from reservation r "
+                + "join payment p on p.reservation_id = r.id where r.code = ?", Boolean.class, code)).isTrue();
+        assertThat(jdbc.queryForObject("select count(*) from outbox_event where destination = 'EMAIL' and aggregate_id = "
+                + "(select id::text from reservation where code = ?)", Integer.class, code)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from payment where stripe_payment_intent_id = ? "
+                + "and status = 'SUCCEEDED'", Integer.class, intentId)).isEqualTo(1);
+    }
+
+    @Test
+    void expiredHoldWithPaidIntentIsConfirmedInsteadOfExtended() throws Exception {
+        ResultActions started = startCheckout(flexPlanId, checkIn, checkOut, email, null).andExpect(status().isCreated());
+        String code = read(started, "$.reservationCode");
+        String intentId = gateway.intentBySecret(read(started, "$.payment.clientSecret")).id();
+        expireHold(code);
+
+        gateway.setStatus(intentId, IntentStatus.SUCCEEDED);
+        holdExpiry.expireDueHolds(100);
+        assertThat(reservationStatus(code)).isEqualTo("CONFIRMED");
+        assertThat(units()).isZero();
+    }
+
+    @Test
     void expiredHoldIsReleasedUnlessPaymentIsInFlight() throws Exception {
         ResultActions started = startCheckout(flexPlanId, checkIn, checkOut, email, null).andExpect(status().isCreated());
         String code = read(started, "$.reservationCode");
@@ -283,6 +324,20 @@ class CheckoutIntegrationTest extends AbstractApiTest {
         String code = read(started, "$.reservationCode");
         String intentId = gateway.intentBySecret(read(started, "$.payment.clientSecret")).id();
         gateway.setStatus(intentId, IntentStatus.SUCCEEDED);
+
+        // Ya cobrado (aunque el webhook no haya llegado): no se libera, se confirma.
+        cancelCheckout(code, read(started, "$.checkoutToken"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("checkout.not_cancellable"));
+        assertThat(reservationStatus(code)).isEqualTo("CONFIRMED");
+    }
+
+    @Test
+    void checkoutInFlightCannotBeAbandoned() throws Exception {
+        ResultActions started = startCheckout(flexPlanId, checkIn, checkOut, email, null).andExpect(status().isCreated());
+        String code = read(started, "$.reservationCode");
+        String intentId = gateway.intentBySecret(read(started, "$.payment.clientSecret")).id();
+        gateway.setStatus(intentId, IntentStatus.PROCESSING);
 
         cancelCheckout(code, read(started, "$.checkoutToken"))
                 .andExpect(status().isConflict())

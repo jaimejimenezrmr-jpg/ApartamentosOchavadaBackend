@@ -10,6 +10,8 @@ import com.ochavada.backend.payment.PaymentProvider;
 import com.ochavada.backend.payment.PaymentRepository;
 import com.ochavada.backend.payment.gateway.PaymentGateway;
 import com.ochavada.backend.payment.gateway.PaymentGateway.IntentSnapshot;
+import com.ochavada.backend.payment.gateway.PaymentGateway.IntentStatus;
+import com.ochavada.backend.payment.webhook.StripeWebhookService;
 import com.ochavada.backend.reservation.Reservation;
 import com.ochavada.backend.reservation.ReservationRepository;
 import com.ochavada.backend.reservation.ReservationStatus;
@@ -38,6 +40,7 @@ public class HoldReleaseService {
     private final ReservationRepository reservationRepository;
     private final PaymentRepository paymentRepository;
     private final PaymentGateway paymentGateway;
+    private final StripeWebhookService webhookService;
     private final GuestAccessService guestAccessService;
     private final AuditService auditService;
     private final CheckoutProperties properties;
@@ -46,7 +49,8 @@ public class HoldReleaseService {
     private final ApplicationEventPublisher events;
 
     public HoldReleaseService(ReservationRepository reservationRepository, PaymentRepository paymentRepository,
-                              PaymentGateway paymentGateway, GuestAccessService guestAccessService,
+                              PaymentGateway paymentGateway, StripeWebhookService webhookService,
+                              GuestAccessService guestAccessService,
                               AuditService auditService, CheckoutProperties properties,
                               PlatformTransactionManager transactionManager, Clock clock,
                               ApplicationEventPublisher events) {
@@ -54,6 +58,7 @@ public class HoldReleaseService {
         this.reservationRepository = reservationRepository;
         this.paymentRepository = paymentRepository;
         this.paymentGateway = paymentGateway;
+        this.webhookService = webhookService;
         this.guestAccessService = guestAccessService;
         this.auditService = auditService;
         this.properties = properties;
@@ -82,6 +87,15 @@ public class HoldReleaseService {
 
         for (String intentId : openIntents) {
             IntentSnapshot snapshot = paymentGateway.cancelIntent(intentId);
+            if (snapshot.status() == IntentStatus.SUCCEEDED) {
+                // Cobrado pero sin webhook: se confirma ya en lugar de esperar indefinidamente.
+                try {
+                    webhookService.applySucceeded(snapshot);
+                    return ReleaseOutcome.NOT_PENDING;
+                } catch (RuntimeException ex) {
+                    log.error("No se pudo confirmar el pago cobrado {} de {}", intentId, reservationId, ex);
+                }
+            }
             if (snapshot.status().isPaidOrInFlight()) {
                 tx.executeWithoutResult(status -> {
                     Reservation reservation = reservationRepository.findForUpdate(reservationId).orElseThrow();

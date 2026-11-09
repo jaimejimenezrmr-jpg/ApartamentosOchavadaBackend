@@ -100,7 +100,8 @@ public class StripePaymentGateway implements PaymentGateway {
     }
 
     private static IntentSnapshot snapshot(PaymentIntent intent) {
-        return new IntentSnapshot(intent.getId(), IntentStatus.fromStripe(intent.getStatus()), intent.getClientSecret());
+        return new IntentSnapshot(intent.getId(), IntentStatus.fromStripe(intent.getStatus()), intent.getClientSecret(),
+                intent.getLatestCharge());
     }
 
     private static PaymentGatewayException failure(String message, StripeException ex) {

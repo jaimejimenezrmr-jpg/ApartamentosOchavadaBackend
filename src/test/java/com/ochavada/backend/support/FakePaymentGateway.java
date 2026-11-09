@@ -37,7 +37,7 @@ public class FakePaymentGateway implements PaymentGateway {
     @Override
     public IntentSnapshot retrieveIntent(String paymentIntentId) {
         Intent intent = intents.get(paymentIntentId);
-        return new IntentSnapshot(intent.id(), intent.status(), intent.clientSecret());
+        return snapshot(intent);
     }
 
     @Override
@@ -47,7 +47,7 @@ public class FakePaymentGateway implements PaymentGateway {
             intent = intent.withStatus(IntentStatus.CANCELED);
             intents.put(paymentIntentId, intent);
         }
-        return new IntentSnapshot(intent.id(), intent.status(), intent.clientSecret());
+        return snapshot(intent);
     }
 
     @Override
@@ -57,6 +57,11 @@ public class FakePaymentGateway implements PaymentGateway {
             refunds.add(refund);
             return refund;
         });
+    }
+
+    private static IntentSnapshot snapshot(Intent intent) {
+        String charge = intent.status() == IntentStatus.SUCCEEDED ? "ch_test_" + intent.id() : null;
+        return new IntentSnapshot(intent.id(), intent.status(), intent.clientSecret(), charge);
     }
 
     public void setStatus(String paymentIntentId, IntentStatus status) {

@@ -25,6 +25,7 @@ import com.ochavada.backend.integration.outbox.OutboxDestination;
 import com.ochavada.backend.integration.outbox.OutboxService;
 import com.ochavada.backend.notification.ReservationEmailHandler;
 import com.ochavada.backend.payment.Payment;
+import com.ochavada.backend.payment.webhook.StripeWebhookService;
 import com.ochavada.backend.payment.PaymentProvider;
 import com.ochavada.backend.payment.PaymentRepository;
 import com.ochavada.backend.payment.StripeProperties;
@@ -90,6 +91,7 @@ public class CheckoutService {
     private final TokenHasher tokenHasher;
     private final PaymentGateway paymentGateway;
     private final HoldReleaseService holdReleaseService;
+    private final StripeWebhookService webhookService;
     private final OutboxService outboxService;
     private final AuditService auditService;
     private final StripeProperties stripeProperties;
@@ -106,7 +108,8 @@ public class CheckoutService {
                            InventoryRepository inventoryRepository, StayQuoteService quoteService,
                            StayRequestValidator stayValidator, ReservationCodeGenerator codeGenerator,
                            TokenHasher tokenHasher, PaymentGateway paymentGateway,
-                           HoldReleaseService holdReleaseService, OutboxService outboxService,
+                           HoldReleaseService holdReleaseService, StripeWebhookService webhookService,
+                           OutboxService outboxService,
                            AuditService auditService, StripeProperties stripeProperties,
                            CheckoutProperties checkoutProperties, PropertyCalendar calendar,
                            EntityManager entityManager, ApplicationEventPublisher events,
@@ -123,6 +126,7 @@ public class CheckoutService {
         this.tokenHasher = tokenHasher;
         this.paymentGateway = paymentGateway;
         this.holdReleaseService = holdReleaseService;
+        this.webhookService = webhookService;
         this.outboxService = outboxService;
         this.auditService = auditService;
         this.stripeProperties = stripeProperties;
@@ -187,6 +191,28 @@ public class CheckoutService {
     // ------------------------------------------------------------------ estado y cancelación
 
     public CheckoutStatusResponse status(String code, String checkoutToken) {
+        CheckoutStatusResponse current = readStatus(code, checkoutToken);
+        if (current.status() != ReservationStatus.PENDING_PAYMENT) {
+            return current;
+        }
+        // Plan B: si el webhook de Stripe no ha llegado, se pregunta directamente por el pago.
+        String openIntent = readTx.execute(s -> reservationRepository.findByCode(code)
+                .flatMap(r -> latestStripePayment(r.getId()))
+                .filter(p -> !p.getStatus().isFinal())
+                .map(Payment::getStripePaymentIntentId)
+                .orElse(null));
+        if (openIntent == null) {
+            return current;
+        }
+        try {
+            return webhookService.reconcileIfSucceeded(openIntent) ? readStatus(code, checkoutToken) : current;
+        } catch (RuntimeException ex) {
+            log.warn("No se pudo consultar en Stripe el pago {} de {}: {}", openIntent, code, ex.getMessage());
+            return current;
+        }
+    }
+
+    private CheckoutStatusResponse readStatus(String code, String checkoutToken) {
         return readTx.execute(s -> {
             Reservation r = verified(code, checkoutToken);
             Optional<Payment> payment = latestStripePayment(r.getId());
